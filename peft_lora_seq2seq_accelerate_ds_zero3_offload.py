@@ -7,7 +7,7 @@ import numpy as np
 import psutil
 import torch
 from accelerate import Accelerator
-from datasets import load_dataset
+from datasets import load_dataset, Dataset, DatasetDict
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, get_linear_schedule_with_warmup, set_seed
@@ -108,8 +108,8 @@ def main(model_name_or_path="bigscience/T0_3B", dataset_name=None, text_column=N
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
     )
-    # text_column = "Tweet text"
-    # label_column = "text_label"
+    text_column = "source_content_norm"
+    label_column = "target_content_norm"
     lr = 3e-3
     num_epochs = 5
     batch_size = 8
@@ -117,16 +117,20 @@ def main(model_name_or_path="bigscience/T0_3B", dataset_name=None, text_column=N
     do_test = False
     set_seed(seed)
 
-    dataset = load_dataset("ought/raft", dataset_name)
-    classes = [k.replace("_", " ") for k in dataset["train"].features["Label"].names]
-    dataset = dataset.map(
-        lambda x: {"text_label": [classes[label] for label in x["Label"]]},
-        batched=True,
-        num_proc=1,
-    )
+    dataset = DatasetDict({
+        "train": load_dataset("json", data_files=f"dataset/train_new.jsonl", split="train"),
+        "eval": load_dataset("json", data_files=f"dataset/Dev_new.jsonl",split="train" ),
+        "test": load_dataset("json", data_files=f"dataset/Test_new.jsonl",split="train"),
+    })
+    # classes = [k.replace("_", " ") for k in dataset["train"].features["Label"].names]
+    # dataset = dataset.map(
+    #     lambda x: {"text_label": [classes[label] for label in x["Label"]]},
+    #     batched=True,
+    #     num_proc=1,
+    # )
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    target_max_length = max([len(tokenizer(class_label)["input_ids"]) for class_label in classes])
+    target_max_length = 512
 
     def preprocess_function(examples):
         inputs = examples[text_column]
@@ -152,7 +156,7 @@ def main(model_name_or_path="bigscience/T0_3B", dataset_name=None, text_column=N
     accelerator.wait_for_everyone()
 
     train_dataset = processed_datasets["train"]
-    eval_dataset = processed_datasets["train"]
+    eval_dataset = processed_datasets["eval"]
     test_dataset = processed_datasets["test"]
 
     def collate_fn(examples):
