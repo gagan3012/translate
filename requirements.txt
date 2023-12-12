@@ -1,0 +1,8 @@
+peft
+trl
+transformers
+datasets
+accelerate
+torch>=2.0.0
+tqdm
+rich
